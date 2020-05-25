@@ -1,6 +1,7 @@
 import sqlite3
 from sqlite3 import Error, IntegrityError
 from sqlite3.dbapi2 import Connection
+from .paper import BASE_URL
 import sqlalchemy
 
 
@@ -16,19 +17,22 @@ def create_connection(db_file):
     return conn
 
 
-def create_table(conn: Connection):
+def create_table_if_not_exist(conn: Connection):
     sql_paper = """ CREATE TABLE IF NOT EXISTS papers (
-                                        title text PRIMARY KEY,
-                                        url text NOT NULL,
+                                        title text,
+                                        url text PRIMARY KEY,
                                         date text,
-                                        authors text
+                                        authors text,
+                                        Timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                                     );  """
     sql_repo = """CREATE TABLE IF NOT EXISTS repos (
-                                        name text PRIMARY KEY,
-                                        paper_title text NOT NULL,
+                                        name text,
+                                        paper_url text NOT NULL,
                                         url text NOT NULL,
                                         readme text,
-                                        FOREIGN KEY (paper_title) REFERENCES papers(title));"""
+                                        private BOOLEAN NOT NULL CHECK (private IN (0,1)),
+                                        PRIMARY KEY(name, paper_url)
+                                        FOREIGN KEY (paper_url) REFERENCES papers(url));"""
 
     sql_files = """CREATE TABLE IF NOT EXISTS files (
                                         path text,
@@ -74,10 +78,23 @@ def __insert(c, sql, my_dict):
     except IntegrityError:
         pass
 
+def get_papers(conn):
+    c = conn.cursor()
+    query ="""SELECT  url FROM papers"""
+    # query1 = """SELECT url FROM papers WHERE url IN (%s)""" % (",".join(["?"] * len(paper_urls)))
+    c.execute(query)
+    result = c.fetchall()
+    paper_urls_in_db = []
+
+    for row in result:
+        paper_urls_in_db.append(row[0][len(BASE_URL):])
+    c.close()
+    return paper_urls_in_db
+
 
 
 
 def dict_to_sql(my_dict, table):
     columns = ', '.join(my_dict.keys())
     placeholders = ':' + ', :'.join(my_dict.keys())
-    return "INSERT INTO " + table + "(%s) VALUES (%s)" % (columns, placeholders)
+    return """INSERT OR REPLACE INTO %s (%s) VALUES (%s)""" % (table, columns, placeholders)

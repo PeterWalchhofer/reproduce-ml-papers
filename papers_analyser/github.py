@@ -12,18 +12,24 @@ TREE_SUFFIX = "git/trees/"
 RECURSIVE_PARAM = "?recursive=true"
 
 
-def get_file_tree(repo, session):
+def get_file_tree(repo, session, auth_token=None, root_only=True):
     api_url = API_URL + repo
-    sha = __get_sha(api_url, session)
-    file_tree_response = __get(session, api_url + "/" + TREE_SUFFIX + sha + RECURSIVE_PARAM)
-    file_tree = json.loads(file_tree_response.content)
+    sha = __get_sha(api_url, session, auth_token=auth_token)
     time.sleep(1)
+    rec_param = RECURSIVE_PARAM
+
+    if not root_only:
+        rec_param = ""
+
+    file_tree_response = __get(session, api_url + "/" + TREE_SUFFIX + sha + rec_param, auth_token=auth_token)
+    file_tree = json.loads(file_tree_response.content)
+
     return __parse_file_tree(file_tree)
 
 
-def __get_sha(api_url, session: requests.Session):
+def __get_sha(api_url, session: requests.Session, auth_token=None):
     url = api_url + "/" + MASTER_SUFFIX
-    response = __get(session, url)
+    response = __get(session, url, auth_token=auth_token)
     parsed_response = json.loads(response.content)
     return parsed_response['commit']['commit']['tree']['sha']
 
@@ -41,8 +47,11 @@ def __parse_file_tree(tree_object):
     return github_files
 
 
-def __get(session: requests.Session, url):
-    response = session.get(url)
+def __get(session: requests.Session, url, auth_token=None):
+    if auth_token is not None:
+        response = session.get(url, headers={"Authorization": "token " + auth_token})
+    else:
+        response = session.get(url)
     status_code = response.status_code
     if status_code != 200:
         response.raise_for_status()
@@ -55,8 +64,8 @@ def __get_dict_value(key_regex, my_dict):
             return value
 
 
-def get_readme(repo_name, session):
-    response = __get(session, API_URL + repo_name + "/readme")
+def get_readme(repo_name, session, auth_token=None):
+    response = __get(session, API_URL + repo_name + "/readme", auth_token=auth_token)
     parsed_response = json.loads(response.content)
     readme = __get_dict_value("content", parsed_response)
     if readme:

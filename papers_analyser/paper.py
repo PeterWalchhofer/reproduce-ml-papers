@@ -1,10 +1,7 @@
-from typing import Dict, List
-
 import requests
 from bs4 import BeautifulSoup
-from urllib import parse
-import papers_analyser.github as github
-from urllib3.util import Url
+
+from papers_analyser.repo import get_repo
 
 AUTHOR_TAG = "span.author-span"
 SESSION = requests.Session()
@@ -12,17 +9,20 @@ BASE_URL = "http://paperswithcode.com"
 
 
 class Paper:
-    def __init__(self, url: str):
-        self.url = BASE_URL + url
-        page = requests.get(self.url).content
-        self.soup = BeautifulSoup(page, "html.parser")
-        self.title = parse_title(self.soup)
-        self.date = parse_date(self.soup).text
-        self.authors = parse_authors(self.soup)
+    def __init__(self, url, soup, title, date, authors, github_urls):
+        self.github_urls = github_urls
+        self.authors = authors
+        self.date = date
+        self.title = title
+        self.soup = soup
+        self.url = url
         self.repos = list()
-        github_urls = parse_github_urls(self.soup)
-        for url in github_urls:
-            self.repos.append(Repo(url, SESSION))
+
+    def scrape_repos(self, auth_token=None):
+        if not self.github_urls:
+            raise AttributeError("Github_urls attribute is empty.")
+        for url in self.github_urls:
+            self.repos.append(get_repo(url, auth_token))
 
     def db_dict(self):
         return {"title": self.title,
@@ -34,9 +34,21 @@ class Paper:
         result = list()
         for repo in self.repos:
             repo_dict = repo.db_dict()
-            repo_dict["paper_title"] = self.title
+            repo_dict["paper_url"] = self.url
             result.append(repo_dict)
         return result
+
+
+def scrape_paper(url):
+    url = BASE_URL + url
+    page = SESSION.get(url).content
+    soup = BeautifulSoup(page, "html.parser")
+    title = parse_title(soup)
+    date = parse_date(soup)
+    authors = parse_authors(soup)
+    github_urls = parse_github_urls(soup)
+
+    return Paper(url, soup, title, date, authors, github_urls)
 
 
 def parse_title(soup: BeautifulSoup):
@@ -54,15 +66,12 @@ def parse_authors(soup: BeautifulSoup):
     return authors
 
 
-def get_repo(url):
-    return Repo(url, SESSION)
-
-
 def parse_date(soup: BeautifulSoup):
     """Parse date of paper. Date is inside author-span html-tag."""
     authors_soup = soup.select("span.author-span")
     if len(authors_soup):
-        return authors_soup[0]
+        return authors_soup[0].text
+
 
 
 def parse_github_urls(soup: BeautifulSoup):
@@ -76,32 +85,7 @@ def parse_github_urls(soup: BeautifulSoup):
 
 
 def parse_github_clone_link(url: str):
-    page = requests.get(url)
+    page = SESSION.get(url)
     soup = BeautifulSoup(page.content, "html.parser")
     box = soup.select("div.clone-options.https-clone-options")[0]
     return box.select("input")[0]["value"]
-
-
-class Repo:
-    def __init__(self, url, session):
-        self.repo_url = url
-        self.clone_url = url + ".git"
-        self.repo_name = parse.urlparse(url).path
-        self.files = github.get_file_tree(self.repo_name, session)
-        self.readme = github.get_readme(self.repo_name, session)
-
-    def db_dict(self):
-        return dict(
-            name=self.repo_name,
-            readme=self.readme,
-            url=self.repo_url
-        )
-
-    def db_file_dicts(self):
-        file_dicts = list()
-        for file in self.files:
-            file_dict = file.db_dict()
-            file_dict["repo_name"] = self.repo_name
-            file_dicts.append(file_dict)
-        return file_dicts
-
