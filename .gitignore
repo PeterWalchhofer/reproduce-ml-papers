@@ -2,3 +2,4 @@
 /data/
 /drivers/Darwin/chromedriver
 /drivers/Windows/chromedriver
+/scripts\config.yaml

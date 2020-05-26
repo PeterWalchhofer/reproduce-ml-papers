@@ -8,9 +8,9 @@ library(markdown)
 library(rvest)
 library(DBI)
 
-source("util.R")
+source("scripts/util.R")
 
-db_path <- "../data/paper.db"
+db_path <- "data/paper.db"
 con <- dbConnect(SQLite(), db_path)
 
 papers <- dbReadTable(con, "papers") %>%
