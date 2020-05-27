@@ -31,6 +31,9 @@ def create_table_if_not_exist(conn: Connection):
                                         url text NOT NULL,
                                         readme text,
                                         private BOOLEAN NOT NULL CHECK (private IN (0,1)),
+                                        framework text,
+                                        mentioned_in_paper BOOLEAN NOT NULL CHECK (private IN (0,1)),
+                                        mentioned_in_github BOOLEAN NOT NULL CHECK (private IN (0,1)),
                                         PRIMARY KEY(name, paper_url)
                                         FOREIGN KEY (paper_url) REFERENCES papers(url));"""
 
