@@ -44,12 +44,13 @@ class Paper:
     def db_dict(self):
         return {"title": self.title,
                 "url": self.url,
-                "date": self.date,
+                "date": self.date.strftime("%Y-%m-%d"),
                 "authors": ",".join(self.authors),
                 "arxiv_id": self.arxiv_id,
                 "url_abs": self.url_abs,
                 "url_pdf": self.url_pdf,
-                "tasks": ",".join(self.tasks)}
+                "tasks": ",".join(self.tasks)
+        }
 
     def db_repo_dicts(self):
         result = list()
@@ -58,6 +59,12 @@ class Paper:
             repo_dict["paper_url"] = self.url
             result.append(repo_dict)
         return result
+
+    def repos_scraped(self):
+        for repo in self.repos:
+            if not repo.scraped:
+                return False
+        return True
 
 
 def scrape_paper(url):
@@ -146,7 +153,7 @@ def __load_json_files(path):
             open(path + "/papers-with-abstracts.json") as papers_file:
         links_to_github, papers = pd.read_json(links_to_github_file), pd.read_json(papers_file)
         merged_df = pd.merge(links_to_github, papers, on="paper_url")
-        return papers
+        return merged_df
 
 
 def __dict_to_paper(paper_dict):

@@ -23,6 +23,10 @@ def create_table_if_not_exist(conn: Connection):
                                         url text PRIMARY KEY,
                                         date text,
                                         authors text,
+                                        tasks text,
+                                        url_pdf text,
+                                        url_abs text,
+                                        arxiv_id text,
                                         Timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                                     );  """
     sql_repo = """CREATE TABLE IF NOT EXISTS repos (
