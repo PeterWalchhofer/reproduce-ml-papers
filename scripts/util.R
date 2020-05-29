@@ -24,12 +24,12 @@ extract_commands <- function(df, col, cmd) {
 
 count_commands <- function(df, col, cmd) {
   col <- enquo(col)
-  col_count_name <- paste0(cmd)#, "_count")
+  col_count_name <- paste0(cmd) #, "_count")
   df %>%
     left_join(extract_commands(df, !!col, cmd) %>%
                 group_by(paper_url) %>%
                 filter(found) %>%
-                count(found) ,
+                count(found),
               by = "paper_url") %>%
     ungroup() %>%
     mutate(n = if_else(is.na(n), 0L, n)) %>%
@@ -51,9 +51,30 @@ count_file_name_occ <- function(df, list_of_regex) {
   result <- df
   for (regex in list_of_regex) {
     result <- result %>%
-      mutate(!!regex := if_else(str_detect(str_to_lower(name), regex), 1, 0))
+      mutate(!!regex := as.integer(if_else(str_detect(str_to_lower(name), regex),
+                                           1, 0)))
   }
   return(result %>%
-           group_by(paper_url, repo_name) %>%
-           summarize_at(vars(list_of_regex), function(x) sum(x)))
+           group_by(repo_name) %>%
+           summarize_at(vars(all_of(list_of_regex)), function(x) sum(x)))
+}
+
+fullfills_satisfaction <- function(df, sat_vec, name) {
+  to_or <- NULL
+  print(sat_vec)
+  print("SETVEC")
+  for (sat_group in sat_vec) {
+    print(sat_group)
+    satisfy_and <- df %>%
+      filter_at(vars(all_of(sat_group)), all_vars(. > 0))
+
+    if (is.null(to_or)) {
+      to_or <- satisfy_and %>% select(repo_name)
+      #to_or %>% View()
+    } else{
+      to_or <- bind_rows(to_or, satisfy_and %>% select(repo_name)) %>% distinct()
+      #to_or %>% View()
+    }
+  }
+  return(df %>% mutate(!! name:= repo_name %in% to_or$repo_name))
 }
