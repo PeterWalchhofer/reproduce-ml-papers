@@ -1,8 +1,8 @@
 import sqlite3
 from sqlite3 import Error, IntegrityError
 from sqlite3.dbapi2 import Connection
+
 from .paper import BASE_URL
-import sqlalchemy
 
 
 def create_connection(db_file):
@@ -67,7 +67,7 @@ def insert_paper(conn, paper):
     repo_dicts = paper.db_repo_dicts()
 
     insert_paper_sql = dict_to_sql(paper_dict, "papers")
-    __insert(c,insert_paper_sql, paper_dict)
+    __insert(c, insert_paper_sql, paper_dict)
 
     for repo_dict in repo_dicts:
         insert_repo_sql = dict_to_sql(repo_dict, "repos")
@@ -76,7 +76,7 @@ def insert_paper(conn, paper):
     for repo in paper.repos:
         for file_dict in repo.db_file_dicts():
             insert_file_sql = dict_to_sql(file_dict, "files")
-            __insert(c,insert_file_sql, file_dict)
+            __insert(c, insert_file_sql, file_dict)
 
 
 def __insert(c, sql, my_dict):
@@ -85,9 +85,10 @@ def __insert(c, sql, my_dict):
     except IntegrityError:
         pass
 
+
 def get_papers(conn):
     c = conn.cursor()
-    query ="""SELECT  url FROM papers"""
+    query = """SELECT  url FROM papers"""
     # query1 = """SELECT url FROM papers WHERE url IN (%s)""" % (",".join(["?"] * len(paper_urls)))
     c.execute(query)
     result = c.fetchall()
@@ -97,8 +98,6 @@ def get_papers(conn):
         paper_urls_in_db.append(row[0][len(BASE_URL):])
     c.close()
     return paper_urls_in_db
-
-
 
 
 def dict_to_sql(my_dict, table):

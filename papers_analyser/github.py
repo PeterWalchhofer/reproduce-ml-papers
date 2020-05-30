@@ -1,15 +1,23 @@
-import time
-from urllib import parse
 import base64
-
-from ppretty.ppretty import ppretty
-import requests
 import json
+import time
+
+import requests
+import yaml
 
 API_URL = "https://api.github.com/repos"
 MASTER_SUFFIX = "branches/master"
 TREE_SUFFIX = "git/trees/"
 RECURSIVE_PARAM = "?recursive=true"
+
+
+def load_auth_token(path):
+    config = yaml.load(open(path, "r"))
+    try:
+        return config["auth_token"]
+    except KeyError:
+        print("No configuration file with auth_token found.")
+        return None
 
 
 def get_file_tree(repo, session, auth_token=None, root_only=True):

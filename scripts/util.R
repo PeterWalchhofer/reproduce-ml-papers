@@ -59,10 +59,32 @@ count_file_name_occ <- function(df, list_of_regex) {
            summarize_at(vars(all_of(list_of_regex)), function(x) sum(x)))
 }
 
+get_paragraph_urls <- function (html, title1, title2){
+  if (is.null(title2)){
+    xpath <- paste0("//h2[preceding-sibling::h2 = '",title1,"']")
+  }else{
+    xpath <- paste0("//h2[preceding-sibling::h2 = '",title1,"' and following-sibling::h2 = '",title2,"']")
+  }
+  xpath <- sprintf("./p[count(preceding-sibling::h2)=%d]", seq_along(headlines)-1)
+
+  parsed <- sapply(html, function(x) {
+     tryCatch({
+    x %>%
+      read_html() %>%
+      html_nodes(xpath=xpath) #%>% #//h2[contains(., '",title,"')]/following-sibling::p
+      #html_nodes("a") %>%
+      #html_attr("href")
+    },return(NA))
+  }) %>%
+    return
+
+}
+
 fullfills_satisfaction <- function(df, sat_vec, name) {
   to_or <- NULL
   print(sat_vec)
   print("SETVEC")
+
   for (sat_group in sat_vec) {
     print(sat_group)
     satisfy_and <- df %>%

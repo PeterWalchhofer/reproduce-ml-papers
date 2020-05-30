@@ -1,15 +1,12 @@
-from datetime import datetime
+import gzip
+import shutil
 from typing import List
 
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from tqdm import tqdm
 
-from papers_analyser.repo import get_repo, Repo
-
-import pandas as pd
-import json
-import requests
+from papers_analyser.repo import Repo
 
 AUTHOR_TAG = "span.author-span"
 SESSION = requests.Session()
@@ -35,12 +32,6 @@ class Paper:
         self.url = url
         self.repos = repos
 
-    def scrape_repos(self, auth_token=None):
-        if not self.github_urls:
-            raise AttributeError("Github_urls attribute is empty.")
-        for url in self.github_urls:
-            self.repos.append(get_repo(url, auth_token))
-
     def db_dict(self):
         return {"title": self.title,
                 "url": self.url,
@@ -50,7 +41,7 @@ class Paper:
                 "url_abs": self.url_abs,
                 "url_pdf": self.url_pdf,
                 "tasks": ",".join(self.tasks)
-        }
+                }
 
     def db_repo_dicts(self):
         result = list()
@@ -119,6 +110,34 @@ def __parse_github_clone_link(url: str):
     return box.select("input")[0]["value"]
 
 
+def download_json_files(path):
+    """ Source: https://github.com/paperswithcode/paperswithcode-data"""
+    papers_with_abstracts_url = "https://paperswithcode.com/media/about/papers-with-abstracts.json.gz"
+    links_url = "https://paperswithcode.com/media/about/links-between-papers-and-code.json.gz"
+    paper_zip_path = path + "/" +papers_with_abstracts_url.split("/")[-1]
+    link_zip_path = path + "/" + links_url.split("/")[-1]
+
+    __download_file(paper_zip_path, papers_with_abstracts_url)
+    __download_file(link_zip_path, links_url)
+
+    __unzip(paper_zip_path)
+    __unzip(link_zip_path)
+
+def __unzip(path: str):
+    """ Source: https://stackoverflow.com/questions/31028815/how-to-unzip-gz-file-using-python"""
+    if path.endswith(".gz"):
+        with gzip.open(path, 'rb') as f_in:
+            with open(path[:-3], 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+
+
+
+def __download_file(path, url):
+    """ Source: https://stackoverflow.com/questions/22676/how-do-i-download-a-file-over-http-using-python"""
+    with SESSION.get(url, stream=True) as response:
+        with open(path, "wb") as handle:
+            shutil.copyfileobj(response.raw, handle)
+
 def load_papers(path, since_date) -> List[Paper]:
     """Load papers from the json files provided at https://github.com/paperswithcode/paperswithcode-data and return a
     list of papers """
@@ -139,13 +158,6 @@ def load_papers(path, since_date) -> List[Paper]:
         papers.append(paper)
 
     return papers
-
-
-def __load_json_files_legacy(path):
-    with open(path + "/links-between-papers-and-code.json") as links_to_github, \
-            open(path + "/papers-with-abstracts.json") as papers:
-        return json.load(links_to_github), json.load(papers)
-    # return pd.read_json(path + "/links-between-papers-and-code.json"), pd.read_json(path + "/papers-with-abstracts.json")
 
 
 def __load_json_files(path):

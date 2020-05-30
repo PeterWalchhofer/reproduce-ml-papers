@@ -54,24 +54,4 @@ class Repo:
             if err.response.status_code == 403:
                 str(err)
                 if not auth_token:
-                    print("WARNING: No auth-token specified. Rate Limit is very low.")
-
-
-def get_repo(url, auth_token=None):
-    repo_url = url
-    clone_url = url + ".git"
-    repo_name = parse.urlparse(url).path
-    private = False
-    files = []
-    readme = None
-    try:
-        files = github.get_file_tree(repo_name, SESSION, auth_token)
-        readme = github.get_readme(repo_name, SESSION, auth_token)
-    except requests.HTTPError as err:
-        raise
-        if err.response.status_code == 403:
-            private = True
-        else:
-            raise
-
-    return Repo(repo_url, clone_url, repo_name, files, readme, private)
+                    print("WARNING: No auth-token specified. Rate Limit will be exceeded easily.")
