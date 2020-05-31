@@ -14,6 +14,16 @@ getNodes <- function(html, selector) {
     return
 }
 
+getUrls <- function(html) {
+  parsed <- sapply(html, function(x) {
+    x %>%
+      read_html() %>%
+      html_nodes("a") %>%
+      html_attr("href")
+  }) %>%
+    return
+}
+
 extract_commands <- function(df, col, cmd) {
   col <- enquo(col)
   df %>%
@@ -59,24 +69,30 @@ count_file_name_occ <- function(df, list_of_regex) {
            summarize_at(vars(all_of(list_of_regex)), function(x) sum(x)))
 }
 
-get_paragraph_urls <- function (html, title1, title2){
-  if (is.null(title2)){
-    xpath <- paste0("//h2[preceding-sibling::h2 = '",title1,"']")
-  }else{
-    xpath <- paste0("//h2[preceding-sibling::h2 = '",title1,"' and following-sibling::h2 = '",title2,"']")
+get_paragraph_urls <- function(html, title1, title2) {
+  if (is.null(title2)) {
+    xpath <- paste0("//h2[preceding-sibling::h2 = '", title1, "']")
+  }else {
+    xpath <- paste0("//h2[preceding-sibling::h2 = '", title1, "' and following-sibling::h2 = '", title2, "']")
   }
-  xpath <- sprintf("./p[count(preceding-sibling::h2)=%d]", seq_along(headlines)-1)
 
-  parsed <- sapply(html, function(x) {
-     tryCatch({
-    x %>%
-      read_html() %>%
-      html_nodes(xpath=xpath) #%>% #//h2[contains(., '",title,"')]/following-sibling::p
-      #html_nodes("a") %>%
-      #html_attr("href")
-    },return(NA))
-  }) %>%
-    return
+  xpath <-
+
+    parsed <- sapply(html, function(x) {
+      tryCatch({
+                 page <- read_html(x)
+
+                 # Make sure you scope on the content of the website
+                 content <- html_node(page, "#mw-content-text")
+                 headlines <- html_nodes(content, "h2")
+                 xpath <- sprintf("./p[count(preceding-sibling::h2)=%d]", seq_along(headlines) - 1)
+                 map(xpath, ~html_nodes(x = content, xpath = .x)) %>% # Get the text inside the headlines
+                   map(html_text, trim = TRUE) %>% # get per node in between
+                   map_chr(paste, collapse = "\n") %>% html_text() %>% return
+
+               }, return(NA))
+    }) %>%
+      return
 
 }
 
@@ -93,10 +109,10 @@ fullfills_satisfaction <- function(df, sat_vec, name) {
     if (is.null(to_or)) {
       to_or <- satisfy_and %>% select(repo_name)
       #to_or %>% View()
-    } else{
+    } else {
       to_or <- bind_rows(to_or, satisfy_and %>% select(repo_name)) %>% distinct()
       #to_or %>% View()
     }
   }
-  return(df %>% mutate(!! name:= repo_name %in% to_or$repo_name))
+  return(df %>% mutate(!!name := repo_name %in% to_or$repo_name))
 }
