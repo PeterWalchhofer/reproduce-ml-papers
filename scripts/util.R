@@ -96,13 +96,10 @@ get_paragraph_urls <- function(html, title1, title2) {
 
 }
 
-fullfills_satisfaction <- function(df, sat_vec, name) {
+check_satisfaction <- function(df, sat_vec, name) {
   to_or <- NULL
-  print(sat_vec)
-  print("SETVEC")
 
   for (sat_group in sat_vec) {
-    print(sat_group)
     satisfy_and <- df %>%
       filter_at(vars(all_of(sat_group)), all_vars(. > 0))
 

@@ -59,6 +59,10 @@ most_reference_domains <- paper_repo_analysed %>%
   group_by(domain) %>%
   count()
 
+most_used_titles <- paper_repo_analysed %>%
+  unnest(titles) %>%
+  group_by(titles) %>% count()
+
 
 list_of_commands <- c("train|fit", "eval", "pip\\sinstall", "requirements|environment|env", "docker")
 gl_comformity_readme <- paper_repo_analysed %>%
@@ -76,17 +80,31 @@ gl_comformity_files <- files %>%
 # Idea: List of vectors - elements of inner vectors are being connected with AND. Outer vectors with OR.
 train_satisfaction <- list(c(list_of_commands[1], file_regexes[1]))
 eval_satisfaction <- list(c(list_of_commands[2], file_regexes[2]))
-requ_satisfaction <- list(c(file_regexes[3]), c(list_of_commands[3]), c(list_of_commands[5]))
+requ_satisfaction <- list(c(file_regexes[3]), c(list_of_commands[3]), c(list_of_commands[5]), c(file_regexes[4]))
 
 guidline_satisfactory <- left_join(gl_comformity_readme, gl_comformity_files, by = "repo_name") %>%
-  fullfills_satisfaction(train_satisfaction, "train_sat") %>%
-  fullfills_satisfaction(eval_satisfaction, "eval_sat") %>%
-  fullfills_satisfaction(requ_satisfaction, "req_sat")
+  check_satisfaction(train_satisfaction, "train_sat") %>%
+  check_satisfaction(eval_satisfaction, "eval_sat") %>%
+  check_satisfaction(requ_satisfaction, "req_sat")
 
 full_satisfactory <- guidline_satisfactory %>%
   filter(train_sat & req_sat & eval_sat)
 
-prefix <- c("python.?\\s", "conda\\s", "sh\\s")
-commands_to_run <- c("python.?\\strain|python.?\\sfit|train.*\\.sh")
+prefix_aut_code <- c("python.?\\s", "conda\\s", "sh\\s")
+commands_aut_code <- c("train","fit", ".*eval.*")
+commands <- list()
+i <- 1
+for (com in commands_aut_code) {
+  command <- ""
+  for(prefix in prefix_aut_code){
+    command <- paste0(command,prefix, com, "|")
+  }
+  commands[[i]] <- substr(command,1,nchar(command)-1)
+  i <- i+ 1
+}
+
+guidline_satisfactory <- paper_repo_analysed %>%
+  count_lotsof_commands(code_snippets, commands) %>%
+  filter_at(vars(commands), function(x) x>0)
 #TODO parse links to dockerhub
 #TODO parse  automatable repos
