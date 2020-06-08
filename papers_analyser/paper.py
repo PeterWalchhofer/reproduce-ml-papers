@@ -10,7 +10,7 @@ from papers_analyser.repo import Repo
 
 AUTHOR_TAG = "span.author-span"
 SESSION = requests.Session()
-BASE_URL = "http://paperswithcode.com"
+BASE_URL = "https://paperswithcode.com"
 
 
 class Paper:

@@ -88,7 +88,9 @@ get_paragraph_urls <- function(html, title1, title2) {
                  xpath <- sprintf("./p[count(preceding-sibling::h2)=%d]", seq_along(headlines) - 1)
                  map(xpath, ~html_nodes(x = content, xpath = .x)) %>% # Get the text inside the headlines
                    map(html_text, trim = TRUE) %>% # get per node in between
-                   map_chr(paste, collapse = "\n") %>% html_text() %>% return
+                   map_chr(paste, collapse = "\n") %>%
+                   html_text() %>%
+                   return
 
                }, return(NA))
     }) %>%
@@ -112,4 +114,18 @@ check_satisfaction <- function(df, sat_vec, name) {
     }
   }
   return(df %>% mutate(!!name := repo_name %in% to_or$repo_name))
+}
+
+command_concat <- function(prefix_aut_code, commands_aut_code) {
+  commands <- list()
+  i <- 1
+  for (com in commands_aut_code) {
+    command <- ""
+    for (prefix in prefix_aut_code) {
+      command <- paste0(command, prefix, com, "|")
+    }
+    commands[[i]] <- substr(command, 1, nchar(command) - 1)
+    i <- i + 1
+  }
+  return(unlist(commands))
 }

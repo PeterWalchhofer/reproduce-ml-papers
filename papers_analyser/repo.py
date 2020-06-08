@@ -9,7 +9,10 @@ SESSION = requests.Session()
 
 class Repo:
     def __init__(self, repo_url, framework=None, clone_url=None, repo_name=None, files=None, readme=None, private=None,
-                 mentioned_in_github=None, mentioned_in_paper=None):
+                 mentioned_in_github=None, mentioned_in_paper=None, stars=None, forks=None, lang=None):
+        self.lang = lang
+        self.forks = forks
+        self.stars = stars
         self.mentioned_in_github = mentioned_in_github
         self.mentioned_in_paper = mentioned_in_paper
         self.framework = framework
@@ -29,7 +32,10 @@ class Repo:
             private=1 if self.private else 0,
             framework=self.framework,
             mentioned_in_paper=1 if self.mentioned_in_paper else 0,
-            mentioned_in_github=1 if self.mentioned_in_github else 0
+            mentioned_in_github=1 if self.mentioned_in_github else 0,
+            stars=self.stars,
+            lang=self.lang,
+            forks=self.forks
         )
 
     def db_file_dicts(self):
@@ -49,6 +55,10 @@ class Repo:
         try:
             self.files = github.get_file_tree(self.repo_name, SESSION, auth_token)
             self.readme = github.get_readme(self.repo_name, SESSION, auth_token)
+            repo_meta = github.get_repo_metadata(self.repo_name, SESSION, auth_token)
+            self.stars = repo_meta["stars"]
+            self.lang = repo_meta["lang"]
+            self.forks = repo_meta["forks"]
             self.scraped = True
         except requests.HTTPError as err:
             if err.response.status_code == 403:

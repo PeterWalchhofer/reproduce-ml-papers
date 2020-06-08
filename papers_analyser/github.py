@@ -79,6 +79,13 @@ def get_readme(repo_name, session, auth_token=None):
     if readme:
         return base64.b64decode(readme).decode("utf-8")
 
+def get_repo_metadata(repo_name, session, auth_token=None):
+    response = __get(session, API_URL + repo_name, auth_token)
+    parsed_response = json.loads(response.content)
+    stars = parsed_response["stargazers_count"]
+    lang = parsed_response["language"]
+    forks = parsed_response["forks_count"]
+    return dict(stars=stars, lang=lang, forks=forks)
 
 class File:
     def __init__(self, name, path, size, url):
@@ -89,3 +96,5 @@ class File:
 
     def db_dict(self):
         return vars(self)
+
+

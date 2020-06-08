@@ -38,6 +38,9 @@ def create_table_if_not_exist(conn: Connection):
                                         framework text,
                                         mentioned_in_paper BOOLEAN NOT NULL CHECK (private IN (0,1)),
                                         mentioned_in_github BOOLEAN NOT NULL CHECK (private IN (0,1)),
+                                        stars INTEGER,
+                                        lang text,
+                                        forks INTEGER,
                                         PRIMARY KEY(name, paper_url)
                                         FOREIGN KEY (paper_url) REFERENCES papers(url));"""
 
@@ -95,7 +98,7 @@ def get_papers(conn):
     paper_urls_in_db = []
 
     for row in result:
-        paper_urls_in_db.append(row[0][len(BASE_URL):])
+        paper_urls_in_db.append(row[0])
     c.close()
     return paper_urls_in_db
 
