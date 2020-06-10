@@ -40,28 +40,41 @@ class Repo:
 
     def db_file_dicts(self):
         file_dicts = list()
-        for file in self.files:
-            file_dict = file.db_dict()
-            file_dict["repo_name"] = self.repo_name
-            file_dicts.append(file_dict)
+        if self.files:
+            for file in self.files:
+                file_dict = file.db_dict()
+                file_dict["repo_name"] = self.repo_name
+                file_dicts.append(file_dict)
         return file_dicts
 
     def scrape(self, auth_token=None):
         self.clone_url = self.repo_url + ".git"
         self.repo_name = parse.urlparse(self.repo_url).path
         self.private = False
-        self.files = []
-        self.readme = None
+
+        repo_meta = self.handle_http_error(github.get_repo_metadata, auth_token)
+
+        if repo_meta is None:
+            self.scraped = False
+            return
+
+        self.stars = repo_meta["stars"]
+        self.lang = repo_meta["lang"]
+        self.forks = repo_meta["forks"]
+        self.scraped = True
+        self.files = self.handle_http_error(github.get_file_tree, auth_token)
+        self.readme = self.handle_http_error(github.get_readme, auth_token)
+
+    def handle_http_error(self, request_method, auth_token):
         try:
-            self.files = github.get_file_tree(self.repo_name, SESSION, auth_token)
-            self.readme = github.get_readme(self.repo_name, SESSION, auth_token)
-            repo_meta = github.get_repo_metadata(self.repo_name, SESSION, auth_token)
-            self.stars = repo_meta["stars"]
-            self.lang = repo_meta["lang"]
-            self.forks = repo_meta["forks"]
-            self.scraped = True
+            return request_method(self.repo_name, SESSION, auth_token)
         except requests.HTTPError as err:
+            print(err)
             if err.response.status_code == 403:
-                str(err)
                 if not auth_token:
                     print("WARNING: No auth-token specified. Rate Limit will be exceeded easily.")
+
+            elif err.response.status_code == 404:
+                return None
+
+

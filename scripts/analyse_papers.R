@@ -37,12 +37,19 @@ repo_py_file <- files %>%
 
 # There is a problem with utf-8 encoding and emojis, which I did not manage to solve with iconv()
 # The emojis and some other chinese symbols are just removed.
+Encoding(repos$readme) <- "UTF-8"
 paper_repo <- papers %>%
   left_join(repos, by = "paper_url") %>%
   rename(readme_old = readme) %>%
-  mutate(readme = suppressWarnings(repair_encoding(readme_old, from = "UTF-8")),
-         readme_html = sapply(readme, function(x) markdownToHTML(text = x)))%>%
+  mutate(readme = iconv(readme_old,"UTF-8", "UTF-8","")) %>%
+  mutate(readme = suppressWarnings(repair_encoding(readme, from = "UTF-8")))
+paper_repo <- paper_repo %>%
+  mutate(readme = if_else(is.na(readme),"",readme)) %>%
+  mutate(readme_html = sapply(readme, function(x) md_to_html(x)))%>%
   filter(date<=end_date)
+
+paper_repo %>% filter(readme_html=="INVALID") %>% View()
+
 
 paper_repo_analysed <- paper_repo %>%
   mutate(code_snippets = getNodes(readme_html, "code"),
@@ -88,12 +95,12 @@ train_satisfaction_rm <- list(c(commands_rm[1], file_regexes[1]))
 eval_satisfaction_rm <- list(c(commands_rm[2], file_regexes[2]))
 requ_satisfaction_rm <- list(c(file_regexes[3]), c(commands_rm[3]), c(commands_rm[5]), c(file_regexes[4]))
 
-guidline_satisfactory <- left_join(gl_comformity_readme, gl_comformity_files, by = "repo_name") %>%
+low_gl_satisfactory <- left_join(gl_comformity_readme, gl_comformity_files, by = "repo_name") %>%
   check_satisfaction(train_satisfaction_rm, "train_sat") %>%
   check_satisfaction(eval_satisfaction_rm, "eval_sat") %>%
   check_satisfaction(requ_satisfaction_rm, "req_sat")
 
-full_satisfactory_rm <- guidline_satisfactory %>%
+full_satisfactory_rm <- low_gl_satisfactory %>%
   filter(train_sat & req_sat & eval_sat)
 
 prefix_aut_code <- c("python.?\\s", "conda\\s", "sh\\s")
@@ -119,14 +126,26 @@ full_satisfactory_automation <- automatation_satisfactory %>%
 #TODO parse  automatable repos
 
 #TODO check for validity
-plotable <- guidline_satisfactory %>%
+low_gl_plotable <- low_gl_satisfactory %>%
   mutate(month = month(date), year = year(date)) %>%
   group_by(month, year) %>%
   summarise_at(vars(c("train_sat","eval_sat", "req_sat")), function (x) sum(x)/n())
 
-time_rm_sat_plot <- ggplot(plotable, aes(x=month, y=1))+
+aut_gl_plotable <- automatation_satisfactory %>%
+  mutate(month = month(date), year = year(date)) %>%
+  group_by(month, year) %>%
+  summarise_at(vars(c("train_sat","eval_sat", "req_sat")), function (x) sum(x)/n())
+
+low_time_rm_sat_plot <- ggplot(low_gl_plotable, aes(x=month, y=1))+
+  geom_line(aes(x=month, y=train_sat, color="train")) +
+  geom_line(aes(x=month, y=eval_sat, color="eval")) +
+  geom_line(aes(x=month, y=req_sat, color="req"))
+
+aut_time_rm_sat_plot <- ggplot(aut_gl_plotable, aes(x=month, y=1))+
   geom_line(aes(x=month, y=train_sat, color="train")) +
   geom_line(aes(x=month, y=eval_sat, color="eval")) +
   geom_line(aes(x=month, y=req_sat, color="req"))
 
 time_rm_sat_plot
+aut_time_rm_sat_plot
+#TODO if there is no master branch, files is NA

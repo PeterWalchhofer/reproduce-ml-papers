@@ -14,6 +14,10 @@ getNodes <- function(html, selector) {
     return
 }
 
+md_to_html <- function (x){
+   return(tryCatch(markdownToHTML(text = x,encoding = "utf-8"), error=function(e) "<html>INVALID</html>"))
+}
+
 getUrls <- function(html) {
   parsed <- sapply(html, function(x) {
     x %>%
