@@ -131,6 +131,11 @@ low_gl_plotable <- low_gl_satisfactory %>%
   group_by(month, year) %>%
   summarise_at(vars(c("train_sat","eval_sat", "req_sat")), function (x) sum(x)/n())
 
+paper_general_plotable <- papers %>%
+  mutate(year_month = paste0(year(date),"-",month(date))) %>%
+  group_by(year_month) %>%
+  count()
+
 aut_gl_plotable <- automatation_satisfactory %>%
   mutate(month = month(date), year = year(date)) %>%
   group_by(month, year) %>%
@@ -145,6 +150,9 @@ aut_time_rm_sat_plot <- ggplot(aut_gl_plotable, aes(x=month, y=1))+
   geom_line(aes(x=month, y=train_sat, color="train")) +
   geom_line(aes(x=month, y=eval_sat, color="eval")) +
   geom_line(aes(x=month, y=req_sat, color="req"))
+
+papers_statistics <- ggplot(paper_general_plotable, aes(x=year_month, y=n))+
+  geom_col()
 
 time_rm_sat_plot
 aut_time_rm_sat_plot
