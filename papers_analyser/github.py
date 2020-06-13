@@ -20,20 +20,42 @@ def load_auth_token(path):
         return None
 
 
-def get_file_tree(repo, session, auth_token=None, root_only=True):
+def get_file_tree(repo, session, auth_token=None, root_only=False):
     api_url = API_URL + repo
     sha = __get_sha(api_url, session, auth_token=auth_token)
     time.sleep(1)
     rec_param = RECURSIVE_PARAM
 
-    if not root_only:
+    if root_only:
         rec_param = ""
 
     file_tree_response = __get(session, api_url + "/" + TREE_SUFFIX + sha + rec_param, auth_token=auth_token)
     file_tree = json.loads(file_tree_response.content)
 
-    return __parse_file_tree(file_tree)
+    return __parse_file_tree(file_tree["tree"])
 
+
+def get_sub_dir(repo, session, path=None, auth_token=None, root_only=False):
+    if "tree/master" in repo:
+        split_repo_url = repo.split("tree/master")
+        repo = split_repo_url[0]
+        if path is None:
+            path = split_repo_url[1] if len(split_repo_url) > 1 else ""
+    api_url = API_URL + repo + "contents/" + path
+
+    rec_param = RECURSIVE_PARAM
+
+    if root_only:
+        rec_param = ""
+
+    url = api_url + "/" + rec_param
+    url.replace("//", "/")
+    file_tree_response = __get(session, url, auth_token=auth_token)
+    file_tree = json.loads(file_tree_response.content)
+    if type(file_tree) == list:
+        return __parse_file_tree(file_tree)
+    else:
+        return None
 
 def __get_sha(api_url, session: requests.Session, auth_token=None):
     url = api_url + "/" + MASTER_SUFFIX
@@ -42,8 +64,7 @@ def __get_sha(api_url, session: requests.Session, auth_token=None):
     return parsed_response['commit']['commit']['tree']['sha']
 
 
-def __parse_file_tree(tree_object):
-    tree = tree_object["tree"]
+def __parse_file_tree(tree):
     github_files = list()
     for file in tree:
         path = __get_dict_value("path", file)
@@ -72,12 +93,15 @@ def __get_dict_value(key_regex, my_dict):
             return value
 
 
-def get_readme(repo_name, session, auth_token=None):
-    response = __get(session, API_URL + repo_name + "/readme", auth_token=auth_token)
+def get_readme(repo_name, session, auth_token=None, url=None):
+    if url is None:
+        url = API_URL + repo_name + "/readme"
+    response = __get(session, url, auth_token=auth_token)
     parsed_response = json.loads(response.content)
     readme = __get_dict_value("content", parsed_response)
     if readme:
         return base64.b64decode(readme).decode("utf-8")
+
 
 def get_repo_metadata(repo_name, session, auth_token=None):
     response = __get(session, API_URL + repo_name, auth_token)
@@ -86,6 +110,7 @@ def get_repo_metadata(repo_name, session, auth_token=None):
     lang = parsed_response["language"]
     forks = parsed_response["forks_count"]
     return dict(stars=stars, lang=lang, forks=forks)
+
 
 class File:
     def __init__(self, name, path, size, url):
@@ -96,5 +121,3 @@ class File:
 
     def db_dict(self):
         return vars(self)
-
-

@@ -52,29 +52,55 @@ class Repo:
         self.repo_name = parse.urlparse(self.repo_url).path
         self.private = False
 
-        repo_meta = self.handle_http_error(github.get_repo_metadata, auth_token)
+        if "tree/master" in self.repo_name:
+            self.__subdir_scrape(auth_token)
+        else:
+            repo_meta = handle_http_error(self.repo_name, github.get_repo_metadata, auth_token)
 
-        if repo_meta is None:
-            self.scraped = False
-            return
+            if repo_meta is None:
+                self.scraped = False
+                return
+            self.__assign_metadata_fields(repo_meta)
+            self.scraped = True
+            self.files = handle_http_error(self.repo_name, github.get_file_tree, auth_token)
+            self.readme = handle_http_error(self.repo_name, github.get_readme, auth_token)
 
+    def __assign_metadata_fields(self, repo_meta):
         self.stars = repo_meta["stars"]
         self.lang = repo_meta["lang"]
         self.forks = repo_meta["forks"]
-        self.scraped = True
-        self.files = self.handle_http_error(github.get_file_tree, auth_token)
-        self.readme = self.handle_http_error(github.get_readme, auth_token)
 
-    def handle_http_error(self, request_method, auth_token):
-        try:
-            return request_method(self.repo_name, SESSION, auth_token)
-        except requests.HTTPError as err:
-            print(err)
-            if err.response.status_code == 403:
-                if not auth_token:
-                    print("WARNING: No auth-token specified. Rate Limit will be exceeded easily.")
+    def __subdir_scrape(self, auth_token=None):
+        """Given repo url defines a subdirectory of a repo"""
+        tree_master = "/tree/master"
+        if tree_master in self.repo_name:
+            super_repo_name = self.repo_name.split(tree_master)[0]
+            repo_meta = handle_http_error(super_repo_name, github.get_repo_metadata, auth_token)
 
-            elif err.response.status_code == 404:
-                return None
+            if repo_meta is None:
+                self.scraped = False
+                return
+            self.__assign_metadata_fields(repo_meta)
+            self.scraped = True
+            self.files = handle_http_error(self.repo_name, github.get_sub_dir, auth_token)
+            if self.files:
+                readmes = [file for file in self.files if "README.md" == file.name]
+                if len(readmes):
+                    url = readmes[0].url
+                    self.readme = github.get_readme(self.repo_name,SESSION, auth_token=auth_token, url=url)
+
+
+
+def handle_http_error(repo_name, request_method, auth_token):
+    try:
+        return request_method(repo_name, SESSION, auth_token=auth_token)
+    except requests.HTTPError as err:
+        print(err)
+        if err.response.status_code == 403:
+            if not auth_token:
+                print("WARNING: No auth-token specified. Rate Limit will be exceeded easily.")
+
+        elif err.response.status_code == 404:
+            return None
 
 
