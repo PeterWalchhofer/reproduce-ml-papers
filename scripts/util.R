@@ -2,7 +2,7 @@
 # Objective : TODO
 # Created by: Peter
 # Created on: 20.05.2020
-
+PARSE_ERROR_HTML <- "<html>INVALID</html>"
 getNodes <- function(html, selector) {
   parsed <- sapply(html, function(x) {
     x %>%
@@ -15,7 +15,7 @@ getNodes <- function(html, selector) {
 }
 
 md_to_html <- function (x){
-   return(tryCatch(markdownToHTML(text = x,encoding = "utf-8"), error=function(e) "<html>INVALID</html>"))
+   return(tryCatch(markdownToHTML(text = x,encoding = "utf-8"), error=function(e) PARSE_ERROR_HTML))
 }
 
 getUrls <- function(html) {

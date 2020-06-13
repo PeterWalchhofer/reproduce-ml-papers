@@ -18,37 +18,51 @@ db_path <- "data/paper.db"
 con <- dbConnect(SQLite(), db_path)
 
 papers <- dbReadTable(con, "papers") %>%
-  rename(paper_url = url)
+  rename(paper_url = url) %>%
+  mutate(date = as.Date(date)) #%>%
+  #left_join(repos %>%
+  #            group_by(paper_url) %>%
+  #            count(name = "repo_count"), by = "paper_url") %>%
+  #mutate(missing_repo = !paper_url %in% repos$paper_url)
 
 repos <- dbReadTable(con, "repos") %>%
-  rename(repo_url = url, repo_name = name)
+  rename(repo_url = url, repo_name = name) %>%
+  filter(paper_url %in% papers$paper_url)
+Encoding(repos$readme) <- "UTF-8"
+repos <- repos %>%
+  rename(readme_old = readme) %>%
+  mutate(readme = iconv(readme_old, "UTF-8", "UTF-8", "")) %>%
+  mutate(readme = suppressWarnings(repair_encoding(readme, from = "UTF-8"))) %>%
+  mutate(readme = if_else(is.na(readme), "", readme)) %>%
+  mutate(readme_html = sapply(readme, function(x) md_to_html(x)))
+
 
 files <- dbReadTable(con, "files") %>%
   mutate(is_root = !str_detect(path, "/")) #%>%
 #left_join(repos, by=c(repo_name="name"))
 
-repo_py_file <- files %>%
+repo_stats <- files %>%
   mutate(py_file = str_detect(name, ".*\\.py")) %>%
   group_by(repo_name) %>%
-  mutate(has_py_file = any(py_file)) %>%
+  mutate(has_py_file = any(py_file), one_file = n() == 1, only_readme = one_file & str_detect(str_to_lower(name), "readme")) %>%
   filter(row_number() == 1) %>%
-  select(repo_name, has_py_file)
-
+  select(repo_name, has_py_file, only_readme) %>%
+  mutate(empty = FALSE) %>%
+  rbind(anti_join(repos %>%
+                    distinct(repo_name), ., by = "repo_name") %>%
+          mutate(has_py_file = FALSE, only_readme = FALSE, empty = TRUE) %>%
+        select(repo_name, has_py_file, only_readme, empty))
 
 # There is a problem with utf-8 encoding and emojis, which I did not manage to solve with iconv()
 # The emojis and some other chinese symbols are just removed.
-Encoding(repos$readme) <- "UTF-8"
+
 paper_repo <- papers %>%
   left_join(repos, by = "paper_url") %>%
-  rename(readme_old = readme) %>%
-  mutate(readme = iconv(readme_old,"UTF-8", "UTF-8","")) %>%
-  mutate(readme = suppressWarnings(repair_encoding(readme, from = "UTF-8")))
-paper_repo <- paper_repo %>%
-  mutate(readme = if_else(is.na(readme),"",readme)) %>%
-  mutate(readme_html = sapply(readme, function(x) md_to_html(x)))%>%
-  filter(date<=end_date)
+  filter(date <= end_date)
 
-paper_repo %>% filter(readme_html=="INVALID") %>% View()
+paper_repo %>%
+  filter(readme_html == PARSE_ERROR_HTML) %>%
+  View()
 
 
 paper_repo_analysed <- paper_repo %>%
@@ -56,7 +70,7 @@ paper_repo_analysed <- paper_repo %>%
          titles = getNodes(readme_html, "h2"),
          pre_trained_urls = get_paragraph_urls(readme_html, "Pretrained models", NULL)) %>%
   mutate(conversion_error = readme != readme_old) %>%
-  left_join(repo_py_file) %>%
+  left_join(repo_stats) %>%
   filter(has_py_file) %>%
   select(-has_py_file)
 
@@ -72,7 +86,8 @@ most_reference_domains <- paper_repo_analysed %>%
 
 most_used_titles <- paper_repo_analysed %>%
   unnest(titles) %>%
-  group_by(titles) %>% count()
+  group_by(titles) %>%
+  count()
 
 
 commands_rm <- c("train|fit", "eval", "pip\\sinstall", "requirements|environment|env", "docker")
@@ -82,7 +97,7 @@ gl_comformity_readme <- paper_repo_analysed %>%
   select(-authors, -Timestamp, -repo_url, -readme_old, -private)
 
 file_regexes <- c(".*train.*\\.py|fit.*\\.py|train.*\\.sh\\.sh|fit.*\\.sh", ".*eval.*\\.py",
-                  "requirements.txt|environment.yml|setup.py", "Dockerfile")
+                  "requirements.txt|environment.yml|setup.py", "dockerfile")
 gl_comformity_files <- files %>%
   count_file_name_occ(file_regexes)
 
@@ -93,18 +108,19 @@ gl_comformity_files <- files %>%
 # has to be >0. Outer vectors with OR, which means one of the occurrances has to be > 0.
 train_satisfaction_rm <- list(c(commands_rm[1], file_regexes[1]))
 eval_satisfaction_rm <- list(c(commands_rm[2], file_regexes[2]))
-requ_satisfaction_rm <- list(c(file_regexes[3]), c(commands_rm[3]), c(commands_rm[5]), c(file_regexes[4]))
+requ_satisfaction_rm <- list(c(file_regexes[3]), c(commands_rm[5]), c(file_regexes[4]))
 
 low_gl_satisfactory <- left_join(gl_comformity_readme, gl_comformity_files, by = "repo_name") %>%
   check_satisfaction(train_satisfaction_rm, "train_sat") %>%
   check_satisfaction(eval_satisfaction_rm, "eval_sat") %>%
-  check_satisfaction(requ_satisfaction_rm, "req_sat")
+  check_satisfaction(requ_satisfaction_rm, "req_sat") %>%
+  mutate(full_sat = train_sat & req_sat & eval_sat)
 
 full_satisfactory_rm <- low_gl_satisfactory %>%
   filter(train_sat & req_sat & eval_sat)
 
 prefix_aut_code <- c("python.?\\s", "conda\\s", "sh\\s")
-commands_aut_code <- c("train","fit", ".*eval.*")
+commands_aut_code <- c("train", "fit", ".*eval.*")
 
 aut_commands <- command_concat(prefix_aut_code, commands_aut_code)
 
@@ -114,46 +130,37 @@ requ_satisfaction_aut <- list(c(file_regexes[3]), c(file_regexes[4]))
 
 automatation_satisfactory <- paper_repo_analysed %>%
   count_lotsof_commands(code_snippets, aut_commands) %>%
-  left_join(gl_comformity_files, by="repo_name") %>%
+  left_join(gl_comformity_files, by = "repo_name") %>%
   check_satisfaction(requ_satisfaction_aut, "req_sat") %>%
   check_satisfaction(eval_satisfaction_aut, "eval_sat") %>%
   check_satisfaction(train_satisfaction_aut, "train_sat")
-  #filter_at(vars(unlist(aut_commands)), any_vars(.>0))
+#filter_at(vars(unlist(aut_commands)), any_vars(.>0))
 
-full_satisfactory_automation <- automatation_satisfactory %>%
-  filter(train_sat & req_sat & eval_sat)
+
 #TODO parse links to dockerhub
 #TODO parse  automatable repos
 
 #TODO check for validity
-low_gl_plotable <- low_gl_satisfactory %>%
-  mutate(month = month(date), year = year(date)) %>%
-  group_by(month, year) %>%
-  summarise_at(vars(c("train_sat","eval_sat", "req_sat")), function (x) sum(x)/n())
 
-paper_general_plotable <- papers %>%
-  mutate(year_month = paste0(year(date),"-",month(date))) %>%
+low_gl_plotable <- low_gl_satisfactory %>%
+  mutate(year_month = floor_date(ymd(date), "month")) %>%
   group_by(year_month) %>%
+  summarise_at(vars(c("train_sat", "eval_sat", "req_sat", "full_sat")), function(x) sum(x) / n())
+
+paper_amount_month <- papers %>%
+  left_join(repos, by = "paper_url") %>%
+  left_join(repo_stats, by = "repo_name") %>%
+  group_by(paper_url, date) %>%
+  mutate(has_py_repo = any(has_py_file), all_repos_empty = all(empty), all_repos_readme_only = all(only_readme)) %>%
+  filter(row_number() == 1) %>%
+  mutate(year_month = floor_date(ymd(date), "month")) %>%
+  group_by(year_month, has_py_repo,all_repos_empty,all_repos_readme_only) %>%
   count()
 
 aut_gl_plotable <- automatation_satisfactory %>%
-  mutate(month = month(date), year = year(date)) %>%
-  group_by(month, year) %>%
-  summarise_at(vars(c("train_sat","eval_sat", "req_sat")), function (x) sum(x)/n())
+  mutate(year_month = floor_date(ymd(date), "month")) %>%
+  group_by(year_month) %>%
+  summarise_at(vars(c("train_sat", "eval_sat", "req_sat")), function(x) sum(x) / n())
 
-low_time_rm_sat_plot <- ggplot(low_gl_plotable, aes(x=month, y=1))+
-  geom_line(aes(x=month, y=train_sat, color="train")) +
-  geom_line(aes(x=month, y=eval_sat, color="eval")) +
-  geom_line(aes(x=month, y=req_sat, color="req"))
 
-aut_time_rm_sat_plot <- ggplot(aut_gl_plotable, aes(x=month, y=1))+
-  geom_line(aes(x=month, y=train_sat, color="train")) +
-  geom_line(aes(x=month, y=eval_sat, color="eval")) +
-  geom_line(aes(x=month, y=req_sat, color="req"))
-
-papers_statistics <- ggplot(paper_general_plotable, aes(x=year_month, y=n))+
-  geom_col()
-
-time_rm_sat_plot
-aut_time_rm_sat_plot
 #TODO if there is no master branch, files is NA

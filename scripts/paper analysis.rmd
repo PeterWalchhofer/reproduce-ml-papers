@@ -1,0 +1,122 @@
+---
+title: "R Notebook"
+author: Peter-NB
+date: 11.06.2020
+output: html_notebook
+---
+
+
+Preprocessing:
+```{r}
+source("analyse_papers.R")
+
+```
+
+Each month around 400-800 papers are being published in the Field of
+```{r}
+papers_statistics <- ggplot(paper_amount_month, aes(x = year_month, y = n)) +
+  geom_col(position = "stack")
+papers_statistics
+```
+Analysing all papers published in the period of observation, here you see the proportion of papers that do contain python code, are empty or do contain only the readme file.
+```{r}
+py_code_all <- paper_amount_month %>%
+  group_by(has_py_repo, all_repos_empty, all_repos_readme_only) %>%
+  summarise(n = sum(n)) %>%
+  spread(has_py_repo, n) %>%
+  rename(py_repo = "TRUE", no_py_repo = "FALSE") %>%
+  spread(all_repos_empty, no_py_repo) %>%
+  rename(empty = "TRUE", not_empty = "FALSE") %>%
+  spread(all_repos_readme_only, not_empty) %>%
+  rename(readme_only = "TRUE", not_readme_only = "FALSE") %>%
+  mutate_all(function(x) if_else(is.na(x), 0, as.double(x))) %>%
+  summarise_all(function(x) sum(x)) %>%
+  rename(no_py_repo = not_readme_only) %>%
+  melt() %>%
+  mutate(type = "all_papers")
+
+py_code_all$variable <- factor(py_code_all$variable, levels = (c("empty", "readme_only", "no_py_repo", "py_repo")))
+
+ggplot(py_code_all, aes(x = type, y = value, fill = variable)) +
+  geom_bar(position = position_stack(), stat = "identity", color = "black") +
+  scale_fill_manual(values = c("#872004", "#e03b22", "#d96250", "#60d950"))
+
+ggplot(py_code_all, aes(x = type, y = value, fill = variable)) +
+  geom_bar(position = position_fill(), stat = "identity") +
+  scale_fill_manual(values = c("#872004", "#e03b22", "#d96250", "#60d950"))
+```
+
+```{r}
+repo_plotable <- repo_stats %>%
+  ungroup() %>%
+  summarise_at(vars(has_py_file, one_file, only_readme), function(x) sum(x)) %>%
+  rbind(colnames(.), .) %>%
+  t() %>%
+  as_tibble() %>%
+  rename(n = V2, type = V1) %>%
+  rbind(c("total", repos %>% nrow()))
+
+
+ggplot(repo_plotable, aes(x = type, y = n)) +
+  geom_col()
+```
+
+```{r}
+environment <- low_gl_satisfactory %>%
+  select(repo_name, paper_url, date, mentioned_in_github, mentioned_in_paper, commands_rm[3], file_regexes[3], file_regexes[4]) %>%
+  mutate(requ_env_setup = .[[7]] > 0, docker_file = .[[8]] > 0, pip = .[[6]] > 0) %>%
+  group_by(paper_url) %>%
+  mutate(requ_env_setup = any(requ_env_setup), docker_file = any(docker_file), pip = any(pip)) %>%
+  filter(row_number() == 1) %>%
+  mutate(only_docker = docker_file & !requ_env_setup, only_req = requ_env_setup & !docker_file,
+          docker_and_requ = docker_file & requ_env_setup ,only_pip = pip & (docker_file & requ_env_setup), not_gl_conform = !(docker_file | requ_env_setup) )%>%
+  group_by(only_pip, only_docker, only_req, docker_and_requ, not_gl_conform) %>%
+  count() %>%
+  # now i try to get thos distjunct sets in one line.
+  spread(only_pip, n) %>%
+  rename(only_pip = "TRUE", no_only_pip = "FALSE") %>%
+  spread(only_req, no_only_pip) %>%
+  rename(only_req = "TRUE", no_only_req = "FALSE") %>%
+  spread(only_docker, no_only_req) %>%
+  rename(only_docker = "TRUE", no_only_docker = "FALSE") %>%
+  spread(docker_and_requ, no_only_docker) %>%
+  rename(docker_and_requ = "TRUE", no_docker_and_requ = "FALSE") %>%
+  spread(not_gl_conform, no_docker_and_requ) %>%
+  rename(not_gl_conform = "TRUE", no_not_gl_conform = "FALSE") %>%
+  select(-no_not_gl_conform) %>%
+  mutate_all(function(x) if_else(is.na(x), 0, as.double(x))) %>%
+  summarise_all(function(x) sum(x)) %>%
+  melt(value.name="papers", variable = "environment-specification") %>%
+  mutate(type = "all_papers")
+
+environment$`environment-specification` <- factor(environment$`environment-specification`, levels = (c("not_gl_conform","only_pip","only_req",  "only_docker", "docker_and_requ" )))
+
+ggplot(environment, aes(x = type, y = papers, fill = `environment-specification`)) +
+  geom_bar(position = position_stack(), stat = "identity", color = "black") +
+  scale_fill_manual(values = c( "#872004","#e03b22", "#63e686", "#60d950", "#32a852"),
+                       labels=c("No dependencies", "Only pip comments in README.md", "Only requeriments.txt \nor setup.py or environment.yml", "Only dockerfile", "Dockerfile and requeriments.txt\n or setup.py or environment.yml"))+
+   theme(axis.text.x=element_blank())
+
+
+```
+
+```{r}
+aut_time_rm_sat_plot <- ggplot(aut_gl_plotable, aes(x = year_month, y = 1)) +
+  geom_line(aes(x = year_month, y = train_sat, color = "train")) +
+  geom_line(aes(x = year_month, y = eval_sat, color = "eval")) +
+  geom_line(aes(x = year_month, y = req_sat, color = "req"))
+
+aut_time_rm_sat_plot
+```
+
+```{r}
+
+low_time_rm_sat_plot <- ggplot(low_gl_plotable, aes(x = year_month, y = 1)) +
+  geom_line(aes(x = year_month, y = train_sat, color = "train")) +
+  geom_line(aes(x = year_month, y = eval_sat, color = "eval")) +
+  geom_line(aes(x = year_month, y = req_sat, color = "req")) +
+  geom_line(aes(x = year_month, y = full_sat, color = "full_sat"))
+low_time_rm_sat_plot
+
+
+```
