@@ -280,4 +280,3 @@ dependencies:
     - lxml==4.5.1
     - smmap==3.0.4
 prefix: C:\Users\Peter-NB\anaconda3\envs\r_python
-
