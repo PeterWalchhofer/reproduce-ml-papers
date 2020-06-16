@@ -10,6 +10,7 @@ library(rvest)
 library(lubridate)
 library(DBI)
 library(stringi)
+library(reshape2)
 
 end_date <- as.Date("2020-05-31", "%Y-%m-%d")
 source("scripts/util.R")
@@ -20,10 +21,10 @@ con <- dbConnect(SQLite(), db_path)
 papers <- dbReadTable(con, "papers") %>%
   rename(paper_url = url) %>%
   mutate(date = as.Date(date)) #%>%
-  #left_join(repos %>%
-  #            group_by(paper_url) %>%
-  #            count(name = "repo_count"), by = "paper_url") %>%
-  #mutate(missing_repo = !paper_url %in% repos$paper_url)
+#left_join(repos %>%
+#            group_by(paper_url) %>%
+#            count(name = "repo_count"), by = "paper_url") %>%
+#mutate(missing_repo = !paper_url %in% repos$paper_url)
 
 repos <- dbReadTable(con, "repos") %>%
   rename(repo_url = url, repo_name = name) %>%
@@ -51,7 +52,7 @@ repo_stats <- files %>%
   rbind(anti_join(repos %>%
                     distinct(repo_name), ., by = "repo_name") %>%
           mutate(has_py_file = FALSE, only_readme = FALSE, empty = TRUE) %>%
-        select(repo_name, has_py_file, only_readme, empty))
+          select(repo_name, has_py_file, only_readme, empty))
 
 # There is a problem with utf-8 encoding and emojis, which I did not manage to solve with iconv()
 # The emojis and some other chinese symbols are just removed.
@@ -60,9 +61,6 @@ paper_repo <- papers %>%
   left_join(repos, by = "paper_url") %>%
   filter(date <= end_date)
 
-paper_repo %>%
-  filter(readme_html == PARSE_ERROR_HTML) %>%
-  View()
 
 
 paper_repo_analysed <- paper_repo %>%
@@ -76,18 +74,40 @@ paper_repo_analysed <- paper_repo %>%
 
 dbDisconnect(con)
 
-most_reference_domains <- paper_repo_analysed %>%
-  mutate(urls = getUrls(readme_html)) %>%
-  select(paper_url, urls) %>%
-  unnest(urls) %>%
-  mutate(domain = domain(urls)) %>%
-  group_by(domain) %>%
-  count()
+repos_containing_pre_trained <- paper_repo_analysed %>%
+  filter(str_detect(str_to_lower(readme_old), "[pre]?-?trained\\smodel"))
 
-most_used_titles <- paper_repo_analysed %>%
-  unnest(titles) %>%
-  group_by(titles) %>%
-  count()
+pre_trained_domains <- repos_containing_pre_trained %>%
+  mutate(urls = getUrls(readme_html)) %>%
+  select(repo_name, urls) %>%
+  unnest(urls, keep_empty = TRUE) %>%
+  filter(startsWith(urls, "http")) %>%
+  mutate(domain = domain(urls))
+
+pre_trained_domains_counted <- pre_trained_domains %>%
+  group_by(domain, repo_name) %>%
+  filter(row_number() == 1) %>%
+  group_by(domain) %>%
+  count() %>%
+  arrange(-n)
+
+domain_cat <- read_csv("categorisation/domain_model_cat.csv") %>%
+  filter(!is.na(hosting) | !is.na(model)) %>%
+  select(domain)
+
+papers_refer_hosting <- repos_containing_pre_trained %>%
+  left_join(pre_trained_domains %>%
+              mutate(storage = domain %in% domain_cat$domain) %>%
+              group_by(repo_name) %>%
+              mutate(refers_to_hosting_page = any(storage)) %>%
+              filter(row_number() == 1) %>%
+              select(repo_name, refers_to_hosting_page)) %>%
+  group_by(paper_url) %>%
+  mutate(refers_to_hosting_page = if_else(is.na(refers_to_hosting_page), FALSE, refers_to_hosting_page)) %>%
+  mutate(one_repo_refers_to_hosting_page = any(refers_to_hosting_page)) %>%
+  filter(row_number() == 1)
+
+#pre_trained_domains %>% arrange(-n) %>% write_csv("categorisation/domain_model_cat_2.csv")
 
 
 commands_rm <- c("train|fit", "eval", "pip\\sinstall", "requirements|environment|env", "docker")
@@ -108,7 +128,7 @@ gl_comformity_files <- files %>%
 # has to be >0. Outer vectors with OR, which means one of the occurrances has to be > 0.
 train_satisfaction_rm <- list(c(commands_rm[1], file_regexes[1]))
 eval_satisfaction_rm <- list(c(commands_rm[2], file_regexes[2]))
-requ_satisfaction_rm <- list(c(file_regexes[3]), c(commands_rm[5]), c(file_regexes[4]))
+requ_satisfaction_rm <- list(c(file_regexes[3]), c(file_regexes[4]))
 
 low_gl_satisfactory <- left_join(gl_comformity_readme, gl_comformity_files, by = "repo_name") %>%
   check_satisfaction(train_satisfaction_rm, "train_sat") %>%
@@ -137,15 +157,7 @@ automatation_satisfactory <- paper_repo_analysed %>%
 #filter_at(vars(unlist(aut_commands)), any_vars(.>0))
 
 
-#TODO parse links to dockerhub
-#TODO parse  automatable repos
 
-#TODO check for validity
-
-low_gl_plotable <- low_gl_satisfactory %>%
-  mutate(year_month = floor_date(ymd(date), "month")) %>%
-  group_by(year_month) %>%
-  summarise_at(vars(c("train_sat", "eval_sat", "req_sat", "full_sat")), function(x) sum(x) / n())
 
 paper_amount_month <- papers %>%
   left_join(repos, by = "paper_url") %>%
@@ -154,7 +166,18 @@ paper_amount_month <- papers %>%
   mutate(has_py_repo = any(has_py_file), all_repos_empty = all(empty), all_repos_readme_only = all(only_readme)) %>%
   filter(row_number() == 1) %>%
   mutate(year_month = floor_date(ymd(date), "month")) %>%
-  group_by(year_month, has_py_repo,all_repos_empty,all_repos_readme_only) %>%
+  group_by(year_month, has_py_repo, all_repos_empty, all_repos_readme_only) %>%
+  count()
+
+paper_amount_month_mentioned_paper <- papers %>%
+  left_join(repos, by = "paper_url") %>%
+  filter(mentioned_in_paper == 1) %>%
+  left_join(repo_stats, by = "repo_name") %>%
+  group_by(paper_url, date) %>%
+  mutate(has_py_repo = any(has_py_file), all_repos_empty = all(empty), all_repos_readme_only = all(only_readme)) %>%
+  filter(row_number() == 1) %>%
+  mutate(year_month = floor_date(ymd(date), "month")) %>%
+  group_by(year_month, has_py_repo, all_repos_empty, all_repos_readme_only) %>%
   count()
 
 aut_gl_plotable <- automatation_satisfactory %>%

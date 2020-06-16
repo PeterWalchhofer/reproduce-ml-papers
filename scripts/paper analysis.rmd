@@ -8,7 +8,8 @@ output: html_notebook
 
 Preprocessing:
 ```{r}
-source("analyse_papers.R")
+if (!exists("paper_amount_month"))
+  source("scripts/analyse_papers.R")
 
 ```
 
@@ -20,20 +21,27 @@ papers_statistics
 ```
 Analysing all papers published in the period of observation, here you see the proportion of papers that do contain python code, are empty or do contain only the readme file.
 ```{r}
-py_code_all <- paper_amount_month %>%
-  group_by(has_py_repo, all_repos_empty, all_repos_readme_only) %>%
-  summarise(n = sum(n)) %>%
-  spread(has_py_repo, n) %>%
-  rename(py_repo = "TRUE", no_py_repo = "FALSE") %>%
-  spread(all_repos_empty, no_py_repo) %>%
-  rename(empty = "TRUE", not_empty = "FALSE") %>%
-  spread(all_repos_readme_only, not_empty) %>%
-  rename(readme_only = "TRUE", not_readme_only = "FALSE") %>%
-  mutate_all(function(x) if_else(is.na(x), 0, as.double(x))) %>%
-  summarise_all(function(x) sum(x)) %>%
-  rename(no_py_repo = not_readme_only) %>%
-  melt() %>%
-  mutate(type = "all_papers")
+barify_general <- function(df) {
+  result <- df %>%
+    group_by(has_py_repo, all_repos_empty, all_repos_readme_only) %>%
+    summarise(n = sum(n)) %>%
+    spread(has_py_repo, n) %>%
+    rename(py_repo = "TRUE", no_py_repo = "FALSE") %>%
+    spread(all_repos_empty, no_py_repo) %>%
+    rename(empty = "TRUE", not_empty = "FALSE") %>%
+    spread(all_repos_readme_only, not_empty) %>%
+    rename(readme_only = "TRUE", not_readme_only = "FALSE") %>%
+    mutate_all(function(x) if_else(is.na(x), 0, as.double(x))) %>%
+    summarise_all(function(x) sum(x)) %>%
+    rename(no_py_repo = not_readme_only) %>%
+    melt() %>%
+    mutate(type = "all_papers")
+
+  result$variable <- factor(result$variable, levels = (c("empty", "readme_only", "no_py_repo", "py_repo")))
+  return(result)
+}
+py_code_all <- barify_general(paper_amount_month)
+py_code_mentioned <- barify_general(paper_amount_month_mentioned_paper)
 
 py_code_all$variable <- factor(py_code_all$variable, levels = (c("empty", "readme_only", "no_py_repo", "py_repo")))
 
@@ -41,82 +49,152 @@ ggplot(py_code_all, aes(x = type, y = value, fill = variable)) +
   geom_bar(position = position_stack(), stat = "identity", color = "black") +
   scale_fill_manual(values = c("#872004", "#e03b22", "#d96250", "#60d950"))
 
-ggplot(py_code_all, aes(x = type, y = value, fill = variable)) +
-  geom_bar(position = position_fill(), stat = "identity") +
+ggplot(py_code_mentioned %>% mutate(type = "Mentioned in paper"), aes(x = type, y = value, fill = variable)) +
+  geom_bar(position = position_stack(), stat = "identity", color = "black") +
   scale_fill_manual(values = c("#872004", "#e03b22", "#d96250", "#60d950"))
 ```
-
+How many papers are  connected to more than one repo?
 ```{r}
-repo_plotable <- repo_stats %>%
-  ungroup() %>%
-  summarise_at(vars(has_py_file, one_file, only_readme), function(x) sum(x)) %>%
-  rbind(colnames(.), .) %>%
-  t() %>%
-  as_tibble() %>%
-  rename(n = V2, type = V1) %>%
-  rbind(c("total", repos %>% nrow()))
-
-
-ggplot(repo_plotable, aes(x = type, y = n)) +
-  geom_col()
-```
-
-```{r}
-environment <- low_gl_satisfactory %>%
-  select(repo_name, paper_url, date, mentioned_in_github, mentioned_in_paper, commands_rm[3], file_regexes[3], file_regexes[4]) %>%
-  mutate(requ_env_setup = .[[7]] > 0, docker_file = .[[8]] > 0, pip = .[[6]] > 0) %>%
+paper_repo_analysed %>%
   group_by(paper_url) %>%
-  mutate(requ_env_setup = any(requ_env_setup), docker_file = any(docker_file), pip = any(pip)) %>%
-  filter(row_number() == 1) %>%
-  mutate(only_docker = docker_file & !requ_env_setup, only_req = requ_env_setup & !docker_file,
-          docker_and_requ = docker_file & requ_env_setup ,only_pip = pip & (docker_file & requ_env_setup), not_gl_conform = !(docker_file | requ_env_setup) )%>%
-  group_by(only_pip, only_docker, only_req, docker_and_requ, not_gl_conform) %>%
   count() %>%
-  # now i try to get thos distjunct sets in one line.
-  spread(only_pip, n) %>%
-  rename(only_pip = "TRUE", no_only_pip = "FALSE") %>%
-  spread(only_req, no_only_pip) %>%
-  rename(only_req = "TRUE", no_only_req = "FALSE") %>%
-  spread(only_docker, no_only_req) %>%
-  rename(only_docker = "TRUE", no_only_docker = "FALSE") %>%
-  spread(docker_and_requ, no_only_docker) %>%
-  rename(docker_and_requ = "TRUE", no_docker_and_requ = "FALSE") %>%
-  spread(not_gl_conform, no_docker_and_requ) %>%
-  rename(not_gl_conform = "TRUE", no_not_gl_conform = "FALSE") %>%
-  select(-no_not_gl_conform) %>%
-  mutate_all(function(x) if_else(is.na(x), 0, as.double(x))) %>%
-  summarise_all(function(x) sum(x)) %>%
-  melt(value.name="papers", variable = "environment-specification") %>%
-  mutate(type = "all_papers")
+  mutate(more_than_one = n > 1) %>%
+  group_by(more_than_one) %>%
+  count() %>%
+  ungroup()
+```
 
-environment$`environment-specification` <- factor(environment$`environment-specification`, levels = (c("not_gl_conform","only_pip","only_req",  "only_docker", "docker_and_requ" )))
+```{r}
+#repo_plotable <- repo_stats %>%
+#  ungroup() %>%
+#  summarise_at(vars(has_py_file, only_readme), function(x) sum(x)) %>%
+#  rbind(colnames(.), .) %>%
+#  t() %>%
+#  as_tibble() %>%
+#  rename(n = V2, type = V1) %>%
+#  rbind(c("total", repos %>% nrow()))
+#
+#
+#ggplot(repo_plotable, aes(x = type, y = n)) +
+#  geom_col()
+```
 
-ggplot(environment, aes(x = type, y = papers, fill = `environment-specification`)) +
+How is the needed environment defined?
+```{r}
+barify_env <- function(df) {
+  result <- df %>%
+    select(repo_name, paper_url, date, mentioned_in_github, mentioned_in_paper, commands_rm[3], file_regexes[3], file_regexes[4]) %>%
+    mutate(requ_env_setup = .[[7]] > 0, docker_file = .[[8]] > 0, pip = .[[6]] > 0) %>%
+    group_by(paper_url) %>%
+    mutate(requ_env_setup = any(requ_env_setup), docker_file = any(docker_file), pip = any(pip)) %>%
+    filter(row_number() == 1) %>%
+    mutate(only_docker = docker_file & !requ_env_setup, only_req = requ_env_setup & !docker_file,
+           docker_and_requ = docker_file & requ_env_setup, only_pip = pip & (docker_file & requ_env_setup), not_gl_conform = !(docker_file | requ_env_setup)) %>%
+    group_by(only_pip, only_docker, only_req, docker_and_requ, not_gl_conform) %>%
+    count() %>%
+    # now i try to get thos distjunct sets in one line.
+    spread(only_pip, n) %>%
+    rename(only_pip = "TRUE", no_only_pip = "FALSE") %>%
+    spread(only_req, no_only_pip) %>%
+    rename(only_req = "TRUE", no_only_req = "FALSE") %>%
+    spread(only_docker, no_only_req) %>%
+    rename(only_docker = "TRUE", no_only_docker = "FALSE") %>%
+    spread(docker_and_requ, no_only_docker) %>%
+    rename(docker_and_requ = "TRUE", no_docker_and_requ = "FALSE") %>%
+    spread(not_gl_conform, no_docker_and_requ) %>%
+    rename(not_gl_conform = "TRUE", no_not_gl_conform = "FALSE") %>%
+    select(-no_not_gl_conform) %>%
+    mutate_all(function(x) if_else(is.na(x), 0, as.double(x))) %>%
+    summarise_all(function(x) sum(x)) %>%
+    melt(value.name = "papers", variable = "environment-specification") %>%
+    mutate(type = "all_papers")
+
+  result$`environment-specification` <- factor(result$`environment-specification`, levels = (c("not_gl_conform", "only_pip", "only_req", "only_docker", "docker_and_requ")))
+  return(result)
+}
+plot_bar_env <- function(df) {
+  ggplot(df, aes(x = type, y = papers, fill = `environment-specification`)) +
+    geom_bar(position = position_stack(), stat = "identity", color = "black") +
+    scale_fill_manual(values = c("#872004", "#e03b22", "#63e686", "#60d950", "#32a852"),
+                      labels = c("No dependencies", "Only pip comments in README.md", "Only requeriments.txt \nor setup.py or environment.yml", "Only dockerfile", "Dockerfile and requeriments.txt\n or setup.py or environment.yml")) +
+    theme(axis.text.x = element_blank())
+}
+environment <- barify_env(low_gl_satisfactory)
+environment_mentioned_paper <- barify_env(low_gl_satisfactory)
+
+plot_bar_env(environment)
+plot_bar_env(environment_mentioned_paper)
+
+
+```
+How many paper's repos that have the term "trained model" in their readme do refer to hosting services?
+```{r}
+bar_refer_hosting <- papers_refer_hosting %>%
+  group_by(one_repo_refers_to_hosting_page) %>%
+  count() %>%
+  melt()
+
+ggplot(bar_refer_hosting, aes(x = variable, y = value, fill = one_repo_refers_to_hosting_page)) +
   geom_bar(position = position_stack(), stat = "identity", color = "black") +
-  scale_fill_manual(values = c( "#872004","#e03b22", "#63e686", "#60d950", "#32a852"),
-                       labels=c("No dependencies", "Only pip comments in README.md", "Only requeriments.txt \nor setup.py or environment.yml", "Only dockerfile", "Dockerfile and requeriments.txt\n or setup.py or environment.yml"))+
-   theme(axis.text.x=element_blank())
-
-
+  scale_fill_manual(values = c("#872004", "#60d950"),
+                    labels = c("No", "Yes")) +
+  theme(axis.text.x = element_blank()) +
+  guides(fill = guide_legend(title = "Is at least one repo connected\n to paper refering to hosting site?"))
 ```
 
 ```{r}
-aut_time_rm_sat_plot <- ggplot(aut_gl_plotable, aes(x = year_month, y = 1)) +
-  geom_line(aes(x = year_month, y = train_sat, color = "train")) +
-  geom_line(aes(x = year_month, y = eval_sat, color = "eval")) +
-  geom_line(aes(x = year_month, y = req_sat, color = "req"))
+barify_train_eval <- function(df) {
+  result <- df %>%
+    group_by(train_sat, eval_sat) %>%
+    count() %>%
+    mutate(type = "all_papers", variable = case_when(train_sat & !eval_sat ~ "train but no eval",
+                                                     eval_sat & !train_sat ~ "eval but no train",
+                                                     eval_sat & train_sat ~ "eval and train",
+                                                     !eval_sat & !train_sat ~ "not eval nor train",
+                                                     TRUE ~ "")) %>%
+    select(-train_sat, -eval_sat)
 
-aut_time_rm_sat_plot
+  result$variable <- factor(result$variable, levels = c("not eval nor train", "eval but no train", "train but no eval", "eval and train"))
+  return(result)
+}
+plot_bar_eval_train <- function(df) {
+  ggplot(df, aes(x = type, y = n, fill = variable)) +
+    geom_bar(position = position_stack(), stat = "identity", color = "black") +
+    scale_fill_manual(values = c("#872004", "#db8f14", "#fade0f", "#60d950")) +
+    guides(fill = guide_legend(title = ""))
+}
+
+overall_train_eval <- barify_train_eval(low_gl_satisfactory)
+train_eval_mentioned_paper <- barify_train_eval(low_gl_satisfactory %>% filter(mentioned_in_paper == 1))
+
+plot_bar_eval_train(overall_train_eval)
+plot_bar_eval_train(train_eval_mentioned_paper)
+
 ```
 
-```{r}
 
+```{r}
+low_gl_plotable <- low_gl_satisfactory %>%
+  mutate(year_month = floor_date(ymd(date), "month")) %>%
+  group_by(year_month) %>%
+  summarise_at(vars(c("train_sat", "eval_sat", "req_sat", "full_sat")), function(x) sum(x) / n())
+
+library(RColorBrewer)
 low_time_rm_sat_plot <- ggplot(low_gl_plotable, aes(x = year_month, y = 1)) +
-  geom_line(aes(x = year_month, y = train_sat, color = "train")) +
-  geom_line(aes(x = year_month, y = eval_sat, color = "eval")) +
-  geom_line(aes(x = year_month, y = req_sat, color = "req")) +
-  geom_line(aes(x = year_month, y = full_sat, color = "full_sat"))
+  geom_line(aes(x = year_month, y = train_sat, color = "Train")) +
+  geom_line(aes(x = year_month, y = eval_sat, color = "Eval")) +
+  geom_line(aes(x = year_month, y = req_sat, color = "Dependencies")) +
+  geom_line(aes(x = year_month, y = full_sat, color = "All")) +
+        labs(color='Papers satisfying:')
 low_time_rm_sat_plot
 
 
+```
+```{r}
+full_sat_all_papers <- low_gl_satisfactory %>%
+        group_by(paper_url) %>%
+        mutate(full_sat_all_repos = any(full_sat)) %>%
+        filter(row_number()==1) %>%
+        ungroup() %>%
+        count(full_sat_all_repos)
 ```
