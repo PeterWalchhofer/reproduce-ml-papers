@@ -10,7 +10,7 @@ Preprocessing:
 ```{r}
 if (!exists("paper_amount_month"))
   source("scripts/analyse_papers.R")
-
+output_dir <- "output/"
 ```
 
 Each month around 400-800 papers are being published in the Field of
@@ -52,6 +52,8 @@ ggplot(py_code_all, aes(x = type, y = value, fill = variable)) +
 ggplot(py_code_mentioned %>% mutate(type = "Mentioned in paper"), aes(x = type, y = value, fill = variable)) +
   geom_bar(position = position_stack(), stat = "identity", color = "black") +
   scale_fill_manual(values = c("#872004", "#e03b22", "#d96250", "#60d950"))
+
+write_csv(py_code_all, paste0(output_dir, "py_code_all.csv"))
 ```
 How many papers are  connected to more than one repo?
 ```{r}
@@ -126,6 +128,8 @@ plot_bar_env(environment)
 plot_bar_env(environment_mentioned_paper)
 
 
+write_csv(environment, paste0(output_dir, "environment.csv"))
+
 ```
 How many paper's repos that have the term "trained model" in their readme do refer to hosting services?
 ```{r}
@@ -170,6 +174,7 @@ train_eval_mentioned_paper <- barify_train_eval(low_gl_satisfactory %>% filter(m
 plot_bar_eval_train(overall_train_eval)
 plot_bar_eval_train(train_eval_mentioned_paper)
 
+write_csv(overall_train_eval, paste0(output_dir, "overall_train_eval.csv"))
 ```
 
 
@@ -188,6 +193,8 @@ low_time_rm_sat_plot <- ggplot(low_gl_plotable, aes(x = year_month, y = 1)) +
         labs(color='Papers satisfying:')
 low_time_rm_sat_plot
 
+
+write_csv(low_gl_plotable, paste0(output_dir, "guideline_sat.csv"))
 
 ```
 ```{r}
